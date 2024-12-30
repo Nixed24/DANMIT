@@ -1,6 +1,7 @@
 # DANMIT
 Displacement and Normal Map interface tool for the Source Engine.
 
+Converts in-Level-editor displacement maps into bump maps for use in textures.
 
 TIPS:
 For painting normal maps, it is best to use the Hard-Edge setting when painting geometry.
