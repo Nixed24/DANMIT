@@ -511,28 +511,32 @@ normal_map_set = np.zeros((len(vertex_set),2**POWER,2**POWER,3), dtype="float")
 ##############################################
 #vertex_set vertexes goes from ToLe->BoLe->BoRi->ToRi
 #brushes for normal_map_set go vertically downwards then loop to the next column (makes sense)
-for i, e in enumerate(vertex_set):
-#    normal_map_set[P] = gen_normal_map\
-#        (get_dist_field\
-#         (find_disp_from_vert_data\
-#          (vmf_data, vertex_set[P])[0]))
-    element = find_disp_from_vert_data(vmf_data, e)
-    if len(element) <= 0:
-        print("WARNING: Null displacement map detected."\
-              "\nIs the top of your brush at z=" + (Z_FLOOR) + "?")
-        normal_map_set[i] = gen_normal_map(np.zeros((2**POWER+1, 2**POWER+1)))
-    else:
-        element = element[0]
-        element = get_dist_field(element)
-        normal_map_set[i] = gen_normal_map(element)
-combined_normal_map = concatenate_normal_map_set(normal_map_set)
-combined_normal_map[:,:,2] = normalise_distance_field(combined_normal_map[:,:,2])
-combined_normal_map = combined_normal_map.astype(int)
-combined_normal_map = np.rot90(combined_normal_map, k=3, axes=(0,1))
-output = gen_normal_map_image(combined_normal_map)
-output.show()
-output.close()
 #We assume and hope that the brushes are nice, equally sized squares that could
 #tile infinetely
+def main():
+    for i, e in enumerate(vertex_set):
+    #    normal_map_set[P] = gen_normal_map\
+    #        (get_dist_field\
+    #         (find_disp_from_vert_data\
+    #          (vmf_data, vertex_set[P])[0]))
+        element = find_disp_from_vert_data(vmf_data, e)
+        if len(element) <= 0:
+            print("WARNING: Null displacement map detected."\
+                  "\nIs the top of your brush at z=" + (Z_FLOOR) + "?")
+            normal_map_set[i] = gen_normal_map(np.zeros((2**POWER+1, 2**POWER+1)))
+        else:
+            element = element[0]
+            element = get_dist_field(element)
+            normal_map_set[i] = gen_normal_map(element)
+    combined_normal_map = concatenate_normal_map_set(normal_map_set)
+    combined_normal_map[:,:,2] = normalise_distance_field(combined_normal_map[:,:,2])
+    combined_normal_map = combined_normal_map.astype(int)
+    combined_normal_map = np.rot90(combined_normal_map, k=3, axes=(0,1))
+    output = gen_normal_map_image(combined_normal_map)
+    output.show()
+    output.close()
+    
+main()
+
 #A power N displacement has (2^N + 1)^2 points
 #Don't care about Z-len since displacement map is only for a 2D face
