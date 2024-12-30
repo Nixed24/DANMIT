@@ -513,6 +513,8 @@ normal_map_set = np.zeros((len(vertex_set),2**POWER,2**POWER,3), dtype="float")
 #brushes for normal_map_set go vertically downwards then loop to the next column (makes sense)
 #We assume and hope that the brushes are nice, equally sized squares that could
 #tile infinetely
+#A power N displacement has (2^N + 1)^2 points
+#Don't care about Z-len since displacement map is only for a 2D face
 def main():
     for i, e in enumerate(vertex_set):
     #    normal_map_set[P] = gen_normal_map\
@@ -537,6 +539,3 @@ def main():
     output.close()
     
 main()
-
-#A power N displacement has (2^N + 1)^2 points
-#Don't care about Z-len since displacement map is only for a 2D face
