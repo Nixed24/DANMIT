@@ -6,7 +6,7 @@ REQUIRED LIBRARIES:
     numpy
     Python Image Library (for generating the normal map image)
 
-Source External Displacement-based Normal Map Tool
+Displacement And Normal Map Interface Tool
 
 This program allows Source 1 Engine texture bump (a.k.a normal) maps to be generated
 via a displacement map located in a VMF file.
