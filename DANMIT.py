@@ -1,19 +1,23 @@
 # -*- coding: utf-8 -*-
 """
-Created on Sun Dec 22 01:13:11 2024
+Started on Sun Dec 22 2024
+
+Displacement And Normal Map Interface Tool
+
+This program allows Source 1 Engine texture bump (normal) maps to be generated
+via a displacement map located in a VMF file.
+
+It requires a VMF populated by brushes whose top faces are displacements parallel to the Top view,
+with a uniform power (POWER, equal to 3 or 4) across all of them.
 
 REQUIRED LIBRARIES:
     numpy
     Python Image Library (for generating the normal map image)
 
-Displacement And Normal Map Interface Tool
-
-This program allows Source 1 Engine texture bump (a.k.a normal) maps to be generated
-via a displacement map located in a VMF file.
-
-It requires a VMF populated exclusively by square brushes whose top faces (located at Z_CEILING)
-are displacements, with a uniform power (POWER) across all of them (usually 3 or 4)
-
+OTHER REQUIREMENTS:
+    Hammer++; specifically that the VMF be saved in Hammer++, since the "vertices_plus" field 
+    is used to obtain vertexes. This will be made optional in future.
+    
 @author: NS
 """
 
@@ -21,7 +25,8 @@ import numpy as np
 from PIL import Image
 
 #######------USER DEFINED CONSTANTS------#######
-MAT_FILENAME_NOEXT = "normalmap_test001a"
+
+NMAP_FILENAME_NOEXT = "normalmap_test001a"
 #Filename of the material whose normal map is to be generated. Currently unused.
 
 VMF_FILENAME = "normalmaptest6.vmf"
@@ -30,49 +35,17 @@ VMF_FILENAME = "normalmaptest6.vmf"
 POWER = 4
 #Power of all displacement maps in the VMF under VMF_FILENAME (MUST BE CONSTANT)
 
-IN_NODES = 2**POWER
-#Unused
-
 Z_CEILING = 0
 #The top of all of the brushes in the VMF should be located at this Z coord.
 
 Z_FLOOR = -64
 #The bottom of all of the brushes in the VMF should be located at this Z coord.
-################################################
 
-
-
-
-
-
-
-
-
-
+TILING_MODE = 0
+#The tiling mode for the normal map. 0 = untiled, 1 = tiled
 
 ################################################
-def find_all(a_str, sub):
-    """
-    Finds all occurrences of a substring inductively within a string.
-    Parameters
-    ----------
-    a_str : string
-        String on which to perform the function.
-    sub : string
-        Target substring.
-    Yields
-    ------
-    start : GENERATOR
-        Generator of target indices.
-    """
-    start = 0
-    while True:
-        start = a_str.find(sub, start)
-        if start == -1:
-            return
-        yield start
-        start += len(sub)
-####Thank you Karl Knetchel for this function####
+
 def read_vmf(vmf_filename):
     """
     Opens the VMF with the inputted filename and reads its text data.
@@ -86,336 +59,402 @@ def read_vmf(vmf_filename):
         All the information stored as text in the VMF.
     """
     vmf = open(vmf_filename, "r")
-    data = vmf.read()
+    vmf_data = vmf.read()
     vmf.close()
-    return data
-def get_brush_data(vmf_data):
+    return vmf_data
+def get_bracket_sandwich(vmf_data, string, indent_level=0):
     """
-    Gets (noisy) data for all brushes in a VMF, is currently only
-    programmed to find brush vertexes as necessary.
+    Gets an isolated 'bracket sandwich' of a field with a given name and given identation level in the VMF.
     Parameters
     ----------
-    vmf_data : string
-        The text body of a VMF.
+    vmf_data : String
+        The VMF as a string
+    string : String
+        The name of the field, such as dispinfo, to isolate.
+    indent_level : Integer
+        The indentation level of the field, or how many identations between the name header and opening curly bracket.
     Returns
     -------
-    list
-        List with index 0 the number of brushes in the VMF as an integer
-        Index 1 is a noisy array with all vertexes of the level inside.
+    vmf_data : String
+        All the information stored as text in the VMF."""
+    output = vmf_data[ vmf_data.find( (string) + ("\n") + ("\t" * indent_level) + ("{") ):]
+    completion_correction = indent_level + 2
+    #Adding this fixed number onto the end of the slice, so the sandwich has the bottom bread (closing curly bracket)
+    output = output[: (output.find( "\n" + ("\t" * indent_level) + ("}") )) + (completion_correction)]
+    return output
+def get_field_by_id(vmf_data, field, _id, indent_level=0):
     """
-    brushdata = vmf_data[vmf_data.find("world"):].split("solid")
-    numbrushes = len(brushdata) - 1
-    vertexdata = vmf_data[vmf_data.find("world"):].split("vertices_plus")
-    vertexdata = vertexdata[1:]
-    for index, element in enumerate(vertexdata):
-        vertexdata[index] = element[element.find("{")+1:element.find("}")]
-    vertexdata = " ".join(str(m) for m in vertexdata)
-    vertexdata = vertexdata.split('"')
-    _vertexdata = []
-    for n in range(3,(len(vertexdata) - 1),4):
-        _vertexdata.append(vertexdata[n])
-    _vertexdata = " ".join(str(m) for m in _vertexdata)
-    _vertexdata = _vertexdata.split(' ')
-    _vertexdata = np.array(_vertexdata, dtype="float")
-    _vertexdata.shape = (24*numbrushes,3)
-    return [numbrushes, _vertexdata]
-def get_disp_data(data):
-    """
-    Finds all data under "dispinfo {...}" for each brush side.
+    Gets an isolated field in specified VMF with specified id and identation level (of field).
+    Parameters
+
     Parameters
     ----------
-    vmf_data : string
-        The or part of the text body of a VMF.
+    vmf_data : String
+        VMF as a string to find the field in.
+    field : String
+        The field name.
+    _id : Integer
+        id number of the field.
+    indent_level : Integer, optional
+        Indentation level of the field. The default is 0.
+
     Returns
     -------
-    disp_data : list
-        Noisy array of displacement info for all sides of brushes in the VMF.
+    output : String
+        The field with specified parameters.
     """
-    disp_data = data.split("dispinfo")
-    disp_data = disp_data[1:]
-    return disp_data
-def get_disp_normal_vector_field(disp_data):
+    _index = vmf_data.find( (field) + ("\n") + ("\t" * indent_level) + ("{") + ("\n") + ("\t" * (indent_level + 1))\
+                          + '"id" "' + (_id) + '"')
+    output = vmf_data[_index:]
+    completion_correction = indent_level + 2
+    #Adding this fixed number onto the end of the slice, so the sandwich has the bottom bread (closing curly bracket)
+    output = output[: (output.find( "\n" + ("\t" * indent_level) + ("}") )) + (completion_correction)]
+    return output
+def get_vertexes(vmf_data):
     """
-    Reads the map of normal vectors from the given displacement info field
-    (what is found under the dispinfo statement in a VMF.)
-    This is used to allow the program to properly recognise displacement nodes
-    located below Z_CEILING.
+    Obtains all vertex positions from specified VMF or VMF part as a vertically stacked ndarray.
+
     Parameters
     ----------
-    disp_data : string
-        String containing the displacement data, usually the return string of a
-        get_disp_data call.
+    vmf_data : String
+        VMF data or part thereof
+
     Returns
     -------
-    _matrix : np.ndarray
-        A 2D map of the normal vectors at each point in the displacement.
+    vertexes_array : np.ndarray
+        Vertically stacked ndarray containing vertex positions.
     """
-    matrix = []
-    _matrix = []
-    normfield = disp_data[disp_data.find("normals") + 6:]
-    normfield = normfield[normfield.find("{") + 1:normfield.find("}")]
-    normfield = normfield.split('"')
-    start_point = normfield.index("row0") + 2 #start point + 2
-    counter = 0
-    for x in range (start_point,(len(normfield) - 1),4):
-        counter += 1
-        matrix.append(normfield[x])
-    matrix = " ".join(str(y) for y in matrix)
-    matrix = matrix.split(" ")
-    matrix = np.array(matrix)
-    for i in range(2,len(matrix),3):
-        _matrix.append(matrix[i])
-    _matrix = np.array(_matrix)
-    _matrix.shape = (2**POWER+1,2**POWER+1) #5, 9, 17 = 2**power + 1
-    return _matrix
-def get_dist_field(truncated_brush_side):
-    """
-    Finds the distance field of a displacement on a brush side.
+    vertexes_array = np.zeros(3)
+    while vmf_data.find('"v" "') != -1:
+        vmf_data = vmf_data[ vmf_data.find('"v" "') + 5 : ]
+        _string = vmf_data[:vmf_data.find('"')]
+        _string = np.array(_string.split(" "), dtype="float")
+        vertexes_array = np.vstack((vertexes_array, _string))
+    vertexes_array = vertexes_array[1:]
+    #This'll be dirty. Use str.find. We're going to use the brush centres to define brushes uniquely since
+    #brushes can share vertices and planes, but not centres! Maybe a dictionary of centre and needed dispinfo or a pointer thereto.
+    #Classes could be used.
+    return vertexes_array
+def get_centre(vertexes_array):
+    """Gets the average of all points specified when said points are a vertically-stacked ndarray of positions.
     Parameters
     ----------
-    truncated_brush_side : string
-        The data of an individual brush side in the VMF.
+    vertexes_array : np.ndarray
+        Vertically stacked ndarray containing vertex positions.
+
     Returns
     -------
-    matrix : np.ndarray
-        The distance field of that side as a 2-D numpy array.
+    centre_coord : np.ndarray
+        Coordinates of the average of the positions inputted."""
+    centre_coord = np.zeros(3)
+    for i in range (3):
+        centre_coord[i] = np.average(vertexes_array[:,i])
+    #Take the average position of all vertices to get the center. This almost definetly wouldn't work for planes.
+    return centre_coord
+
+vmf_data = read_vmf(VMF_FILENAME)
+
+NUM_OF_BRUSHES = vmf_data.count("solid\n\t{")
+
+
+#### Generating dictionary of { solid id : solid centre coord } ####
+solid_dict = {}
+counter = 0
+solid_marker = vmf_data.find("solid\n\t{")
+trunc_vmf_data = vmf_data
+#solid\n\t{\n\t\t"id" "(num)"
+while solid_marker != -1:
+    
+    trunc_vmf_data = trunc_vmf_data[solid_marker:]
+    
+    end_marker = trunc_vmf_data[17:].find('"')
+    
+    solid_id = trunc_vmf_data[17:end_marker+17]
+    current_solid = get_field_by_id(vmf_data, "solid", solid_id, 1)
+    
+    vertexes_stack = get_vertexes(current_solid)
+    solid_centre = get_centre(vertexes_stack)
+    
+    solid_dict[solid_id] = solid_centre
+    
+    counter += 1
+    trunc_vmf_data = trunc_vmf_data[end_marker+17:]
+    solid_marker = trunc_vmf_data.find("solid\n\t{")
+####################################################################
+
+#### Ordering the dictionary from left->right top->bottom from topleft w.r.t hammer top view ####
+#so least x, greatest y -> greatest x, least y; running through like a document
+#Going from least x to greatest x, decreasing y, then so on
+
+solid_ids = np.array( list(solid_dict.keys()) )
+centres = np.array( list(solid_dict.values()) )
+
+centres = np.round(centres) # Accounting for loss of floating-point precision by rounding
+
+Z = centres[0,2] # all Z coords should be the same so we'll just use the top-left one
+
+X_MIN = np.min( centres[:,0] )
+Y_MIN = np.min( centres[:,1] )
+
+X_MAX = np.max( centres[:,0] )
+Y_MAX = np.max( centres[:,1] )
+
+x_length_solids = np.count_nonzero(centres[:,1] == Y_MIN)   
+x_length_solid_units = (X_MAX - X_MIN) / (x_length_solids-1) #Max x and y is of centre, so we go over 1 less solid in the difference.
+
+y_length_solids = np.count_nonzero(centres[:,0] == X_MIN)
+y_length_solid_units = (Y_MAX - Y_MIN) / (y_length_solids-1)
+
+x_centres = (x_length_solid_units * np.arange(0, (x_length_solids))) + X_MIN
+y_centres = (y_length_solid_units * (-1) * np.arange(0, (y_length_solids))) + Y_MAX
+
+
+nodes_per_solid = 2**POWER + 1
+
+RESOLUTION_X = nodes_per_solid * x_length_solids
+RESOLUTION_Y = nodes_per_solid * y_length_solids
+
+        #### There is a bug in numpy where ndarrays change shape when you use them to assign a variable.
+        #### This bug even occurs if you copy the array and then use the copy to assign a variable
+        #### The original array, for some reason, changes in this case, to a different shape. This seems to be due to
+        #### the ndarray datatype being generic "object" and that object is an array-like, it will suddenly become int(0)
+
+####---Initialising arrays---####
+ordered_solid_id_list = np.zeros(NUM_OF_BRUSHES)
+ordered_solid_centre_list = np.zeros(NUM_OF_BRUSHES, dtype=np.ndarray)
+ordered_solid_field_list = np.zeros(NUM_OF_BRUSHES, dtype=np.ndarray)
+ordered_solid_dispinfo_list = np.zeros(NUM_OF_BRUSHES, dtype=np.ndarray)
+ordered_solid_distance_list = np.zeros(NUM_OF_BRUSHES, dtype=np.ndarray)
+ordered_solid_normals_list = np.zeros(NUM_OF_BRUSHES, dtype=np.ndarray)
+ordered_solid_direction_list = np.zeros(NUM_OF_BRUSHES, dtype=np.ndarray)
+ordered_solid_distance_field = np.zeros(NUM_OF_BRUSHES, dtype=np.ndarray)
+ordered_startpos_config_list = np.zeros(NUM_OF_BRUSHES, dtype=np.ndarray)
+ordered_solid_displacement_field = np.zeros(NUM_OF_BRUSHES, dtype=np.ndarray)
+displacement_field = np.zeros((y_length_solids, x_length_solids, nodes_per_solid, nodes_per_solid))
+grand_displacement_field = np.zeros((nodes_per_solid * y_length_solids, nodes_per_solid * x_length_solids))
+####--------------------------####
+
+
+def get_normals_sign(data):
     """
-    matrix = []
-    distfield = truncated_brush_side[truncated_brush_side.find("distances") + 9:]
-    distfield = distfield[distfield.find("{") + 1:distfield.find("}")]
-    distfield = distfield.split('"')
-    start_point = distfield.index("row0") + 2 #start point + 2
-    counter = 0
-    for x in range (start_point,(len(distfield) - 1),4):
-        counter += 1
-        matrix.append(distfield[x])
-    matrix = " ".join(str(y) for y in matrix)
-    matrix = matrix.split(" ")
-    matrix = np.array(matrix, dtype="float")
-    matrix.shape = (2**POWER+1,2**POWER+1)#5, 9, 17 = 2**power + 1
-    sign_field = get_disp_normal_vector_field(truncated_brush_side).astype("float")
-    matrix = np.where(sign_field < 0, -1 * matrix, matrix)
-    return matrix
-def gen_normal_map(distance_field):
+    Finds the sign field that is applied to the distance field to produce the displacement field.
+    The "normals" field of the dispinfo field is used.
+
+    Parameters
+    ----------
+    data : String
+        Normals or outer non-ambiguous field.
+
+    Returns
+    -------
+    binary_normals_array : np.ndarray
+        The sign field.
+
+    """
+    normals_array = np.zeros(3 * (nodes_per_solid))
+    while data.find('"row') != -1:
+        
+        data = data[ data.find('"row') + 2 : ]
+        data = data[ data.find('"') + 3 : ]
+    
+        _string = data[:data.find('"')]
+        _string = np.array(_string.split(" "), dtype="float")
+        normals_array = np.vstack((normals_array, _string))
+    
+    normals_array = normals_array[1:]
+    normals_array = normals_array[:,2::3]
+    binary_normals_array = np.where(normals_array > 0, 1, -1)
+    return binary_normals_array
+def get_distances(data):
+    """
+    Given the distance field or outer non-ambiguous field, obtains an np.ndarray
+    of the distance field.
+
+    Parameters
+    ----------
+    data : String
+        Distance field or non-ambiguous outer field.
+
+    Returns
+    -------
+    distances_array : np.ndarray
+        Distance field as an ndarray.
+    """
+    distances_array = np.zeros(nodes_per_solid)
+    while data.find('"row') != -1:
+        data = data[ data.find('"row') + 2 : ]
+        data = data[ data.find('"') + 3 : ]
+        _string = data[:data.find('"')]
+        _string = np.array(_string.split(" "), dtype="float")
+        distances_array = np.vstack((distances_array, _string))
+    distances_array = distances_array[1:]
+    return distances_array
+def get_dispinfo(vmf_data, _id, mode="solid"):
+    """
+    Obtains the dispinfo field from side or solid with specified ID in given VMF part.
+    Assumes that the solid has only 1 dispinfo-having side.
+    
+    Parameters
+    ----------
+    vmf_data : String
+        VMF data or part thereof.
+    _id : Integer
+        The ID of the side or solid to find the dispinfo of.
+    mode : String, optional
+        Whether to find dispinfo from solid with specified _id or side with specified _id. 
+        The default is "solid".
+
+    Returns
+    -------
+    dispinfo_data : String
+        The dispinfo field matching the parameters.
+    """
+    if mode == "side":
+        _indent_level = 2
+    else:
+        _indent_level = 1 # mode == solid
+        
+    object_data = get_field_by_id(vmf_data, mode, _id, _indent_level)
+    
+    dispinfo_data = get_bracket_sandwich(object_data, "dispinfo", 3)
+    
+    #For "normals" part of dispinfo, only z-coord (and particularly its sign) matters; this and "distances" should
+    #give us all the necessary info.
+    return dispinfo_data
+def get_dispinfo_start_position(dispinfo):
+    """
+    Finds the "startposition" parameter of a dispinfo field.
+
+    Parameters
+    ----------
+    dispinfo : String
+        Dispinfo field or outer non-ambiguous field.
+
+    Returns
+    -------
+    startpos : np.ndarray
+        Coordinates specified by the startposition parameter.
+    """
+    data = dispinfo
+    data = data[data.find('"startposition" "[') + 18 : ]
+    data = data[:data.find(']')]
+    startpos = np.array(data.split(" "), dtype="float")
+    return startpos
+
+
+# 0: do nothing
+# 1: flip horizontal
+# 2: flip vertical
+# 3: flip horizontal and vertical
+def get_startpos_configuration(dispinfo, centre):
+    """
+    Obtains the start position configuration of the specified dispinfo field and centre
+    of the brush the dispinfo field belongs to.
+
+    Parameters
+    ----------
+    dispinfo : String
+        The dispinfo field of the solid's top face.
+    centre : np.ndarray
+        Coords of the centre of the solid 
+
+    Returns
+    -------
+    startpos_config : Integer
+        The orientation number of the displacement field
+    """
+    start_pos = get_dispinfo_start_position(dispinfo)
+    if start_pos[1] < centre[1]: # Bottom
+        if start_pos[0] < centre[0]: # Left
+            startpos_config = 2
+        else: # Right
+            startpos_config = 3
+    if start_pos[1] > centre[1]: # Top
+        if start_pos[0] < centre[0]: # Left
+            startpos_config = 0
+        else: # Right
+            startpos_config = 1
+    return startpos_config
+
+def correct_displacement_field_orientation(displacement_field, config_num):
+    """
+    Given a distance/displacement field and orientation, rotate it such that it begins from the top-left
+    and scans like a document.
+
+    Parameters
+    ----------
+    displacement_field : np.ndarray
+    The displacement field.
+    
+    config_num : Integer
+    The orientation number of the displacement field, found by get_startpos_configuration()
+    
+    Returns
+    -------
+    transformed displacement_field
+        Reorientated displacement field
+    """
+    if config_num == 3:
+        return np.flipud(np.fliplr(displacement_field))
+    if config_num == 2:
+        return np.flipud(displacement_field)
+    if config_num == 1:
+        return np.fliplr(displacement_field)
+    else:
+        return displacement_field
+    
+def get_vertices_from_plane():
+    #For compatability
+    return
+def gen_normal_map(displacement_field):
     """
     Generates a corresponding normal map from the distance field,
     interpolating between distance points to find the normal vector.
+    
     Parameters
     ----------
-    distance_field : np.ndarray
-        The distance field.
+    displacement_field : np.ndarray
+        The displacement field.
     Returns
     -------
-    normalMap : np.ndarray
+    normal_map : np.ndarray
         The corresponding normal map.
     """
     #First we will go through left-right for each row to get the R
     #Top-Bottom for G
     #Then we will find the node with the highest and lowest distances, and
     #normalise it to 128->256 for the blue
-    distance_field = distance_field.astype(float)
-    shape = distance_field.shape
-    shape = shape + (3,)
-    normal_map = np.zeros(shape, dtype=int)
+    
+    node_distance_x = x_length_solid_units / nodes_per_solid
+    node_distance_y = y_length_solid_units / nodes_per_solid
+    
+    shape = displacement_field.shape
+    shape = shape + (3,) # This 2D array of single floats will be a 2D array of 3 values (RGB values)
+    normal_map = np.zeros(shape, dtype=int) #why int?
     theta_map = np.zeros(shape)
-    for row in range(distance_field.shape[0]):
-        for index_x in range (len(distance_field[0,:])-1):
-            d = distance_field[row][index_x] - distance_field[row][index_x+1]
-            theta_x = np.arcsin(d/np.sqrt(d**2+(node_distance)**2))
+    
+    for row in range(displacement_field.shape[0]):
+        for index_x in range (len(displacement_field[0,:])-1):
+            d = displacement_field[row][index_x] - displacement_field[row][index_x+1]
+            theta_x = np.arcsin(d/np.sqrt(d**2+(node_distance_x)**2))
             theta_map[row][index_x][0] = theta_x
             normal_map[row][index_x][0] = np.floor((theta_x + (np.pi/2))*(255/np.pi))
-    for column in range(distance_field.shape[1]):
-        for index_y in range (len(distance_field[:,0])-1):
-            d = distance_field[index_y][column] - distance_field[index_y+1][column]
-            theta_y = np.arcsin(d/np.sqrt(d**2+(node_distance)**2))
+            
+    for column in range(displacement_field.shape[1]):
+        for index_y in range (len(displacement_field[:,0])-1):
+            d = displacement_field[index_y][column] - displacement_field[index_y+1][column]
+            theta_y = np.arcsin(d/np.sqrt(d**2+(node_distance_y)**2))
             theta_map[index_y][column][1] = theta_y
-            #normal_map[index_y][column][1] = np.floor((theta_y + (np.pi/2))*(255/np.pi))
-            normal_map[index_y][column][1] = 255 - np.floor((theta_y + (np.pi/2))*(255/np.pi))
-    normal_map[:,:,2] = distance_field
-    normal_map = normal_map[:-1,:-1,:]
+            normal_map[index_y][column][1] = np.floor((theta_y + (np.pi/2))*(255/np.pi))
+            
+    normal_map[:,:,2] = displacement_field
     return normal_map
-def gen_normal_map_image(normal_map):
-    """
-    Generates the correspnding image for an inputted normal map, which can
-    then be imported by a VTF editor into a VTF file.
-    Parameters
-    ----------
-    normal_map : np.ndarray
-        The array representing the normal map.
-    Returns
-    -------
-    img : PIL.Image.Image
-        Corresponding image of the normal map exportable directly.
-    """
-    img = Image.new("RGB", (RESOLUTION, RESOLUTION), (128, 128, 255))
-    pixels = img.load()
-    for i in range(img.size[0]):    # for every col:
-        for j in range(img.size[1]):    # For every row
-            pixels[i,j] = (normal_map[i][j][0],\
-                           normal_map[i][j][1],\
-                           normal_map[i][j][2]) # set the colour accordingly
-    img.save(VMF_FILENAME[0:-4] + (".png") + "")
-    return img
-def get_vertexes_from_top_left_vertex(vertexpos, _dims):
-    """
-    Finds all vertices of a brush given the brush dimensions and position of
-    the top-left vertex as seen in Hammer's top view. This function assumes
-    the brush is a cuboid.
-    Parameters
-    ----------
-    vertexpos : array_like
-        The position coordinates of the top-left vertex
-    _dims : array_like
-        Dimensions of the brush (length, width and height)
-    Returns
-    -------
-    verts : np.ndarray
-        Array of all the vertices of the corresponding brush.
-    """
-    verts = np.zeros((2,2,3))
-    counterx = 0
-    countery = -1
-    for y in range (2):
-        countery += 1
-        counterx = 0
-        for x in range (2):
-            verts[x][y] = [(vertexpos[0] + _dims[0] * counterx),\
-                           (vertexpos[1] - _dims[1] * countery),\
-                           (vertexpos[2])]
-            counterx += 1
-    verts.shape = (4,3)
-    return verts
-def get_vertex_top_lefts(tltlvertex, _dims, num_brushes):
-    """
-    Gets all top-left vertices for every brush in the VMF given the top-left
-    vertex of the top-left brush as a reference point.
-    Parameters
-    ----------
-    tltlvertex : array_like
-        Top-left vertex of the top-left brush.
-    _dims : array_like
-        Dimensions of each brush, these must be constant for all brushes.
-    num_brushes : int
-        Number of brushes present in the VMF. (Square number)
-    Returns
-    -------
-    verts : np.ndarray 
-        Array of all top-left vertices of every brush in the VMF.
-    """
-    sidelength = int(np.sqrt(num_brushes))
-    verts = np.zeros((sidelength, sidelength, 3))
-    counterx = 0
-    countery = -1
-    for y in range (sidelength):
-        countery += 1
-        counterx = 0
-        for x in range (sidelength):
-            verts[x][y] = [(tltlvertex[0] + counterx * _dims[0]),\
-                           (tltlvertex[1] - countery * _dims[1]),\
-                               tltlvertex[2]] #Only interested in sides at z = Z_CEILING
-            counterx += 1
-    _verts = verts
-    _verts.shape = (sidelength**2, 3)
-    return verts
-def find_disp_from_vert_data(vmf_data, vertex):
-    """
-    Finds the displacement data of a brush side given its vertices.
-    Parameters
-    ----------
-    vmf_data : string
-        The text body of a VMF.
-    vertex : np.ndarray
-        The vertices of the target brush side.
-    Returns
-    -------
-    disp_out : list
-        The displacement data for that brush side.
-    """
-    occurrences = []
-    vertex = np.array(vertex, dtype="int")
-    _string = ""
-    for A in vertex:
-        for B in range(3):
-            _string =  ' '.join(str(C) for C in A)
-        _string = '"v" "' + (_string) + '"\n'
-        _list = list(find_all(vmf_data, _string))
-        occurrences += _list
-    occurrences.sort()
-    min_distance = float('inf')
-    best_subset = []
-    for D in range(len(occurrences)-3):
-        subset = occurrences[D:D+4]
-        distance = subset[-1] - subset[0]
-        if distance < min_distance:
-            min_distance = distance
-            best_subset = subset
-    vmf_data_chunk = vmf_data[best_subset[0]:]
-    disp_out = get_disp_data(vmf_data_chunk)
-    return disp_out
-def get_vertex_set(toplefts):
-    """
-    Finds the complete set of all brush side vertices given the coordinates
-    of the top-left vertex for each brush.
-    Parameters
-    ----------
-    toplefts : np.ndarray
-        The array containing the coordinates of the top-left vertices for
-        every brush in the VMF.
-    Returns
-    -------
-    vertexSet : np.ndarray
-        The complete set of all brush side vertices for each brush in the VMF.
-    """
-    counter = 0
-    _vertex_set = np.zeros((len(toplefts), 4, 3))
-    for x in toplefts:
-        _vertex_set[counter] = get_vertexes_from_top_left_vertex(x, dims)
-        counter += 1
-    return _vertex_set
-def concatenate_normal_map_set(normalmap_set):
-    """
-    Concatenates a set of normal maps into one normal map, following the order
-    in which vertex_set refers to individual brushes.
-    The current order is top-left brush downwards, before looping back to the
-    bottom brush of the next column and walking upwards.
-    Parameters
-    ----------
-    normalmap_set : np.ndarray
-        The set containing each normal map.
-    Returns
-    -------
-    _currentrow : np.ndarray
-        The concatenated, single normal map.
-    """
-    sidelength = int(np.sqrt(len(normalmap_set)))
-    _currentcolumn = np.zeros((2**POWER,2**POWER,3))
-    _currentrow = np.zeros((2**POWER*(sidelength),2**POWER,3))
-    for a in range (sidelength):
-        _currentcolumn = np.zeros((2**POWER,2**POWER,3))
-        for b in range (sidelength):
-            if a % 2 == 0:
-                normalmap_set[b+sidelength*a] = np.flip(normalmap_set[b+sidelength*a],\
-                                                        axis=0)
-                _currentcolumn = np.vstack((_currentcolumn,\
-                                            normalmap_set[b+sidelength*a]))
-            else:
-                _currentcolumn = np.vstack((normalmap_set[b+sidelength*a],\
-                                            _currentcolumn))
-        if a % 2 == 0:
-            _currentcolumn = _currentcolumn[2**POWER:,:,:]
-        else:
-            _currentcolumn = _currentcolumn[:-2**POWER,:,:] #get rid of zeroes
-        _currentrow = np.hstack((_currentrow, _currentcolumn))
-    _currentrow = _currentrow[:,2**POWER:,:]
-    for C in range(sidelength):
-        if C % 2 == 0:
-            _currentrow[:,2**POWER*C:2**POWER*(C+1),:] \
-                = np.flipud(_currentrow[:,2**POWER*C:2**POWER*(C+1),:])
-    return _currentrow
 def normalise_distance_field(distance_field):
+    #May need to rework this function
     """
     Normalises the inputted distance field such that its values are on the bounds
     [128,256) and follow a proper order.
+     
     Parameters
     ----------
     distance_field : np.ndarray
@@ -433,109 +472,84 @@ def normalise_distance_field(distance_field):
         return distance_field
     normalised_distance_field = np.floor(distance_field * 128/(max_dist - min_dist))
     normalised_distance_field = normalised_distance_field + 128
+    normalised_distance_field = np.where((normalised_distance_field == 128),\
+                                         192,\
+                                         normalised_distance_field) #set zeroes
     normalised_distance_field = np.where((normalised_distance_field > 255),\
                                          255,\
                                          normalised_distance_field) #Restrict upper
-    normalised_distance_field = np.where((normalised_distance_field < 192),\
-                                         192,\
+    normalised_distance_field = np.where((normalised_distance_field < 0),\
+                                         0,\
                                          normalised_distance_field) #Restrict lower
     return normalised_distance_field
-def _normalise_distance_field(distance_field):
+def gen_normal_map_image(normal_map):
     """
-    Normalises the inputted distance field such that its values are on the bounds
-    [128,256) and follow a proper order.
+    Generates the correspnding image for an inputted normal map, which can
+    then be imported by a VTF editor into a VTF file.
+    
     Parameters
     ----------
-    distance_field : np.ndarray
-       A distance field.
+    normal_map : np.ndarray
+        The array representing the normal map.
     Returns
     -------
-    normalised_distance_field : np.ndarray
-        The inputted distance field after normalisation.
+    img : PIL.Image.Image
+        Corresponding image of the normal map exportable directly.
     """
-    max_dist = np.max(distance_field)
-    min_dist = np.min(distance_field)
-    distance_field = np.where(distance_field < 1/255,\
-                              1/255, 1/distance_field)
-    if max_dist == min_dist:
-        print("Cannot normalise distance field since max_dist and min_dist are the same.\n\
-              Aborted normalisation.")
-        return distance_field
-    normalised_distance_field = np.floor(distance_field * 128/(max_dist - min_dist))
-    normalised_distance_field = normalised_distance_field + 128
-    #normalised_distance_field = normalised_distance_field[:-1,:-1]
-    normalised_distance_field = np.where((normalised_distance_field > 255),\
-                                         255,\
-                                         normalised_distance_field) #Restrict upper
-    normalised_distance_field = np.where((normalised_distance_field < 192),\
-                                         192,\
-                                         normalised_distance_field) #Restrict lower
-    return normalised_distance_field
+    img = Image.new("RGB", (RESOLUTION_Y, RESOLUTION_X), (128, 128, 255))
+    pixels = img.load()
+    for i in range(img.size[1]):    # for every col:
+        for j in range(img.size[0]):    # For every row
+            pixels[j,i] = (normal_map[i][j][0],\
+                           normal_map[i][j][1],\
+                           normal_map[i][j][2]) # set the colour accordingly
+    img.save(NMAP_FILENAME_NOEXT + (".png") + "")
+    return img
 
-
-
-
-#####-----PROGRAM-DEFINED CONSTANTS-----#####
-
-
-
-
-
-vmf_data = read_vmf(VMF_FILENAME)
-dist_data = get_dist_field(vmf_data)
-num_of_brushes, vertexes = get_brush_data(vmf_data)
-RESOLUTION = int(2**POWER * np.sqrt(num_of_brushes))
-xLen = np.abs(np.max(vertexes[:,0]) - np.min(vertexes[:,0]))
-yLen = np.abs(np.max(vertexes[:,1]) - np.min(vertexes[:,1]))
-topleft_x = np.min(vertexes[:,0])
-topleft_y = np.max(vertexes[:,1])
-topleft_z = np.max(vertexes[:,2]) # = Z_CEILING
-brush_xLen = xLen / np.sqrt(num_of_brushes)
-brush_yLen = yLen / np.sqrt(num_of_brushes)
-dims = [brush_xLen, brush_yLen,(Z_CEILING - Z_FLOOR)]
-topleft_coords = [topleft_x, topleft_y, Z_CEILING]
-node_distance = (brush_xLen) / (2**POWER)
-num_of_points = num_of_brushes * (2**POWER + 1)**2
-#Min X and Max Y is the top-left in Hammer's top view, so we'll use that
-#Since we know brush dims, num of brushes and a reference point, we can easily
-#find the vertices of all brushes
-top_lefts = get_vertex_top_lefts(topleft_coords, dims, num_of_brushes)
-top_left_brush_vertexes = get_vertexes_from_top_left_vertex(topleft_coords, dims)
-vertex_set = get_vertex_set(top_lefts)
-normal_map_set = np.zeros((len(vertex_set),2**POWER,2**POWER,3), dtype="float")
-
-
-
-
-
-##############################################
-#vertex_set vertexes goes from ToLe->BoLe->BoRi->ToRi
-#brushes for normal_map_set go vertically downwards then loop to the next column (makes sense)
-#We assume and hope that the brushes are nice, equally sized squares that could
-#tile infinetely
-#A power N displacement has (2^N + 1)^2 points
-#Don't care about Z-len since displacement map is only for a 2D face
-def main():
-    for i, e in enumerate(vertex_set):
-    #    normal_map_set[P] = gen_normal_map\
-    #        (get_dist_field\
-    #         (find_disp_from_vert_data\
-    #          (vmf_data, vertex_set[P])[0]))
-        element = find_disp_from_vert_data(vmf_data, e)
-        if len(element) <= 0:
-            print("WARNING: Null displacement map detected."\
-                  "\nIs the top of your brush at z=" + (Z_FLOOR) + "?")
-            normal_map_set[i] = gen_normal_map(np.zeros((2**POWER+1, 2**POWER+1)))
-        else:
-            element = element[0]
-            element = get_dist_field(element)
-            normal_map_set[i] = gen_normal_map(element)
-    combined_normal_map = concatenate_normal_map_set(normal_map_set)
-    combined_normal_map[:,:,2] = normalise_distance_field(combined_normal_map[:,:,2])
-    combined_normal_map = combined_normal_map.astype(int)
-    combined_normal_map = np.rot90(combined_normal_map, k=3, axes=(0,1))
-    output = gen_normal_map_image(combined_normal_map)
-    output.show()
-    output.close()
+counter = 0
+for y_index, current_y in enumerate(y_centres):
     
-main()
+    for x_index, current_x in enumerate(x_centres):
+        
+        target_id_index_condition = np.logical_and(centres[:,0] == current_x, centres[:,1] == current_y) # gen cond
+        target_id_index = np.argwhere(target_id_index_condition) #do cond
+        
+        target_id = solid_ids[target_id_index]
+        target_centre = np.squeeze(centres[target_id_index])
+        ordered_solid_id_list[counter] = target_id
+        ordered_solid_centre_list[counter] = target_centre # I wish these wouldn't be ndarrays with extraneous dimensions...
+                                                                # Didn't know about np.squeeze
+        ordered_solid_field_list[counter] = get_field_by_id(vmf_data, "solid", target_id[0][0], 1)
+        
+        ##-- Generating ordered dispinfo dict -> displacement field dict (well, 2 lists, but essentially a dict) --##
+        ordered_solid_dispinfo_list[counter] = get_bracket_sandwich(ordered_solid_field_list[counter], "dispinfo", 3)
+        ordered_startpos_config_list[counter] = get_startpos_configuration(ordered_solid_dispinfo_list[counter], ordered_solid_centre_list[counter])
+        ordered_solid_distance_list[counter] = get_bracket_sandwich(ordered_solid_dispinfo_list[counter], "distances", 4)
+        ordered_solid_normals_list[counter] = get_bracket_sandwich(ordered_solid_dispinfo_list[counter], "normals", 4)
+        ordered_solid_direction_list[counter] = get_normals_sign(ordered_solid_normals_list[counter])
+        ordered_solid_distance_field[counter] = get_distances(ordered_solid_distance_list[counter])
+        ordered_solid_displacement_field[counter] = (ordered_solid_direction_list[counter] * ordered_solid_distance_field[counter])
+        ordered_solid_displacement_field[counter] = correct_displacement_field_orientation(ordered_solid_displacement_field[counter], ordered_startpos_config_list[counter])
+        
+        displacement_field[y_index][x_index] = ordered_solid_displacement_field[counter]
+        
+        grand_displacement_field[y_index * nodes_per_solid : (y_index + 1) * nodes_per_solid, x_index * nodes_per_solid : (x_index + 1) * nodes_per_solid] = displacement_field[y_index][x_index]
+        
+        counter += 1
+
+correction = np.rot90(np.flipud(grand_displacement_field), k = 3)
+#correction = grand_displacement_field
+
+normal_map = gen_normal_map(correction)
+normal_map[:,:,2] = normalise_distance_field(normal_map[:,:,2])
+
+# FOR TILING
+
+if TILING_MODE == 1:
+    normal_map[-1,:] = normal_map[0,:]
+    normal_map[:,-1] = normal_map[:,0]
+elif TILING_MODE == 0:
+    normal_map[-1,:] = np.array([127,127,192])
+    normal_map[:,-1] = np.array([127,127,192])
+
+normal_map_image = gen_normal_map_image(normal_map)
