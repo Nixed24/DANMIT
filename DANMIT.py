@@ -132,8 +132,7 @@ def get_vertexes(vmf_data):
         vertexes_array = np.vstack((vertexes_array, _string))
     vertexes_array = vertexes_array[1:]
     #This'll be dirty. Use str.find. We're going to use the brush centres to define brushes uniquely since
-    #brushes can share vertices and planes, but not centres! Maybe a dictionary of centre and needed dispinfo or a pointer thereto.
-    #Classes could be used.
+    #brushes can share vertices and planes, but not centres!
     return vertexes_array
 def get_centre(vertexes_array):
     """Gets the average of all points specified when said points are a vertically-stacked ndarray of positions.
@@ -149,7 +148,7 @@ def get_centre(vertexes_array):
     centre_coord = np.zeros(3)
     for i in range (3):
         centre_coord[i] = np.average(vertexes_array[:,i])
-    #Take the average position of all vertices to get the center. This almost definetly wouldn't work for planes.
+    #Take the average position of all vertices to get the center.
     return centre_coord
 
 vmf_data = read_vmf(VMF_FILENAME)
@@ -430,7 +429,7 @@ def gen_normal_map(displacement_field):
     
     shape = displacement_field.shape
     shape = shape + (3,) # This 2D array of single floats will be a 2D array of 3 values (RGB values)
-    normal_map = np.zeros(shape, dtype=int) #why int?
+    normal_map = np.zeros(shape, dtype=int)
     theta_map = np.zeros(shape)
     
     for row in range(displacement_field.shape[0]):
@@ -517,8 +516,7 @@ for y_index, current_y in enumerate(y_centres):
         target_id = solid_ids[target_id_index]
         target_centre = np.squeeze(centres[target_id_index])
         ordered_solid_id_list[counter] = target_id
-        ordered_solid_centre_list[counter] = target_centre # I wish these wouldn't be ndarrays with extraneous dimensions...
-                                                                # Didn't know about np.squeeze
+        ordered_solid_centre_list[counter] = target_centre
         ordered_solid_field_list[counter] = get_field_by_id(vmf_data, "solid", target_id[0][0], 1)
         
         ##-- Generating ordered dispinfo dict -> displacement field dict (well, 2 lists, but essentially a dict) --##
@@ -538,7 +536,6 @@ for y_index, current_y in enumerate(y_centres):
         counter += 1
 
 correction = np.rot90(np.flipud(grand_displacement_field), k = 3)
-#correction = grand_displacement_field
 
 normal_map = gen_normal_map(correction)
 normal_map[:,:,2] = normalise_distance_field(normal_map[:,:,2])
