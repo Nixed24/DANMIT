@@ -9,6 +9,7 @@ using programs that are all free/open-source.
 PREREQUISITES:
 numpy
 PIL (Python Image Library)
+Hammer or Hammer++
 
 Both of these libraries can be installed with PIP.
 
