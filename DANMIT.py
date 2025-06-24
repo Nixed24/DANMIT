@@ -26,11 +26,11 @@ from PIL import Image
 
 #######------USER DEFINED CONSTANTS------#######
 
-NMAP_FILENAME_NOEXT = "normalmap_test001a"
-#Filename of the material whose normal map is to be generated. Currently unused.
+NMAP_FILENAME_NOEXT = "your_normalmap_here"
+#Filename of the material whose normal map is to be generated.
 
-VMF_FILENAME = "normalmaptest6.vmf"
-#Filename of the VMF with the target displacement map.
+VMF_FILENAME = "your_normal_map_vmf.vmf"
+#Filename of the VMF + filename extension with the target displacement map.
 
 POWER = 4
 #Power of all displacement maps in the VMF under VMF_FILENAME (MUST BE CONSTANT)
@@ -256,7 +256,6 @@ solid_dict = {}
 counter = 0
 solid_marker = vmf_data.find("solid\n\t{")
 trunc_vmf_data = vmf_data
-#solid\n\t{\n\t\t"id" "(num)"
 if HAMMER_PLUS_PLUS == True:  
     while solid_marker != -1:
         
