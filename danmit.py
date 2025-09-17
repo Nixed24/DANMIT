@@ -52,7 +52,7 @@ RES_Y = 32
 #Vertical resolution of normal map in pixels. Must be an integer power of 2.
 
 TILING_MODE = 0
-#The tiling mode for the normal map. 0 = untiled, 1 = tiled
+#The tiling mode for the normal map. 0 = untiled, 1 = tiled; this means that the last pixels on each row/column will be overwritten by the first.
 
 HAMMER_PLUS_PLUS = False
 #Is the VMF in Hammer++ format? Set to "False" if you're not sure/getting errors
@@ -678,4 +678,5 @@ with open(normal_map_param_path, "w", encoding="UTF-8") as param_file:
     param_file.close()
 # Running VTEX with -nopause means it should close by itself.
 vtex_instance = Popen([f'{VTEX_PATH}', '-nopause -dontusegamedir', f'{normal_map_path}'], text=True)
+
 
