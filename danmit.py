@@ -22,6 +22,7 @@ OPTIONAL:
     
 @author: Nicks24 (GitHub)
 """
+
 from os import getcwd
 from subprocess import Popen
 import numpy as np
@@ -339,13 +340,6 @@ NODES_PER_SOLID = 2**POWER + 1 # Number of nodes along one direction for a displ
 RESOLUTION_X = NODES_PER_SOLID * x_length_solids
 RESOLUTION_Y = NODES_PER_SOLID * y_length_solids
 
-        #### There is a bug in numpy where ndarrays change shape when you use them to assign a variable.
-        #### This bug even occurs if you copy the array and then use the copy to assign a variable
-        #### The original array, for some reason, changes in this case, to a different shape. This seems to be due to
-        #### the ndarray datatype being generic "object" and that object is an ndarray, it will suddenly become int(0)
-        #### regardless of the content of the ndarray, I tried an ndarray of zeros and ndarray of a constant and the
-        #### same result was shown.
-        
 ####---Initialising arrays---####
 ordered_solid_id_list = np.zeros(NUM_OF_BRUSHES) # ordered array of solid ids (order detailed further above)
 ordered_solid_centre_list = np.zeros(NUM_OF_BRUSHES, dtype=np.ndarray)
@@ -684,3 +678,4 @@ with open(normal_map_param_path, "w", encoding="UTF-8") as param_file:
     param_file.close()
 # Running VTEX with -nopause means it should close by itself.
 vtex_instance = Popen([f'{VTEX_PATH}', '-nopause -dontusegamedir', f'{normal_map_path}'], text=True)
+
