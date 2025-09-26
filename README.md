@@ -12,8 +12,6 @@ Libraries:
 
 -os (built-in)
 
--subprocess (built-in)
-
 -numpy
 
 -PIL (Python Image Library)
