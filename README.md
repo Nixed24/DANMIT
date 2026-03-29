@@ -16,14 +16,16 @@ Libraries:
 
 -PIL (Python Image Library)
 
-All of the above libraries can be installed with PIP.
+-VMF Deserialiser (this is included with the repo)
+
+All of the above non-included libraries can be installed with PIP.
 
 Others:
 
--Hammer or Hammer++ (any version)
+-Hammer or any variant (Hammer++, Sledge, etc.)
 
 INSTRUCTIONS:
-Drag DANMIT.py to a folder with your displacement VMF inside, edit the VMF_FILENAME variable to point to your VMF file, and NMAP_FILENAME_NOEXT to point to your output normal map, specify the POWER variable as the power of your displacements and customise other settings to your liking. Save DANMIT.py and execute it, and your normal map VTF should shortly be created in the same folder as DANMIT with the specified filename. You may want to have DANMIT in the same folder you are exporting your normal-mapped material to for this reason.
+Drag DANMIT.py to a folder with your displacement VMF inside, edit the ```VMF_FILENAME``` variable to point to your VMF file, and ```NMAP_FILENAME_NOEXT``` to point to your output normal map and customise other settings to your liking. Save danmit.py and execute it, and your normal map VTF should shortly be created in the same folder as DANMIT with the specified filename. You may want to have DANMIT in the same folder you are exporting your normal-mapped material to for this reason.
 
 TIPS:
 For painting normal maps, it is best to use the Hard-Edge setting when painting geometry.
