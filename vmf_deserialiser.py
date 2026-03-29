@@ -1,3 +1,19 @@
+# -*- coding: utf-8 -*-
+"""
+Started on Feb 22 2026
+
+VMF Deserialiser
+
+This module allows Source VMF files to be turned into Python dictionaries.
+
+The function to be used is deserialise_vmf(), which should be called with a path to a VMF file, which it will then open and deserialise, returning a dict that represents the VMF.
+
+REQUIRED LIBRARIES:
+    None, VMF Deserialiser only uses builtins.
+    
+@author: Nicks24 (GitHub)
+"""
+
 settings = {"tagFirstInstance": True}
 
 def read_in_vmf(vmf_filename):
